@@ -2,6 +2,7 @@ from datetime import date, datetime
 
 import sqlite3
 
+from app.services.locking import begin_immediate, write_lock
 from app.services.policies import get_active_policy
 
 
@@ -11,6 +12,13 @@ def _parse_day(value: str) -> date:
 
 def run_expire_scan(conn: sqlite3.Connection, as_of_date: str) -> dict:
     """扫描在线分区：超过策略保留天数则生成待执行裁决。"""
+    # 与执行、对账共用写锁：扫描开单与对账落库互不交叉
+    with write_lock:
+        begin_immediate(conn)
+        return _run_expire_scan_locked(conn, as_of_date)
+
+
+def _run_expire_scan_locked(conn: sqlite3.Connection, as_of_date: str) -> dict:
     as_of = _parse_day(as_of_date)
     cur = conn.execute(
         "INSERT INTO scan_jobs (as_of_date, status, message) VALUES (?,?,?)",
@@ -88,18 +96,19 @@ def list_judgments(
     clauses: list[str] = []
     params: list[object] = []
     if status:
-        clauses.append("status = ?")
+        clauses.append("j.status = ?")
         params.append(status)
     if scan_job_id is not None:
-        clauses.append("scan_job_id = ?")
+        clauses.append("j.scan_job_id = ?")
         params.append(scan_job_id)
     where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
     rows = conn.execute(
-        "SELECT id, scan_job_id, partition_id, domain_code, biz_date, "
-        "policy_version, keep_days, decided_action, status, fail_reason, created_at "
-        "FROM judgments"
+        "SELECT j.id, j.scan_job_id, j.partition_id, j.domain_code, j.biz_date, "
+        "j.policy_version, j.keep_days, j.decided_action, j.status, "
+        "j.fail_reason, j.created_at, p.storage_state "
+        "FROM judgments j JOIN partitions p ON p.id = j.partition_id"
         + where
-        + " ORDER BY id DESC",
+        + " ORDER BY j.id DESC",
         params,
     ).fetchall()
     return [dict(r) for r in rows]

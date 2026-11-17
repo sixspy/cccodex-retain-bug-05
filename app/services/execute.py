@@ -1,10 +1,18 @@
 import sqlite3
 
+from app.services.locking import begin_immediate, write_lock
 from app.services.partitions import get_partition
 
 
 def execute_judgment(conn: sqlite3.Connection, judgment_id: int) -> dict:
     """执行单条裁决：归档写入 archive_uri；销毁清空在线态。整单失败则回滚本条。"""
+    # 与对账、扫描共用一把写锁：两名回放串行落库，杜绝并发混数覆盖正式轨
+    with write_lock:
+        begin_immediate(conn)
+        return _execute_judgment_locked(conn, judgment_id)
+
+
+def _execute_judgment_locked(conn: sqlite3.Connection, judgment_id: int) -> dict:
     row = conn.execute(
         "SELECT * FROM judgments WHERE id = ?", (judgment_id,)
     ).fetchone()

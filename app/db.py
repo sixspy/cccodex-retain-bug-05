@@ -8,9 +8,11 @@ from app.config import Config
 def connect(db_path: str | None = None) -> sqlite3.Connection:
     path = db_path or Config.database()
     Path(path).parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(path, check_same_thread=False)
+    conn = sqlite3.connect(path, check_same_thread=False, timeout=5)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
+    # 并发写排队时最多等 5 秒，而不是立即抛 database is locked
+    conn.execute("PRAGMA busy_timeout = 5000")
     return conn
 
 
@@ -100,6 +102,19 @@ CREATE TABLE IF NOT EXISTS reconcile_reports (
   mismatch_count INTEGER NOT NULL,
   summary TEXT NOT NULL,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- 错位来源随报告一起落库：历史对账列表也能看到每条错位的裁决与实物分区
+CREATE TABLE IF NOT EXISTS reconcile_mismatches (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  report_id INTEGER NOT NULL,
+  judgment_id INTEGER NOT NULL,
+  partition_id INTEGER NOT NULL,
+  decided_action TEXT NOT NULL,
+  judgment_status TEXT NOT NULL,
+  storage_state TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  FOREIGN KEY(report_id) REFERENCES reconcile_reports(id)
 );
 
 CREATE TABLE IF NOT EXISTS meta (

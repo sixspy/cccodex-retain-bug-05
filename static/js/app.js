@@ -26,8 +26,28 @@
           ? "ok"
           : state === "已失败"
             ? "bad"
-            : "";
+            : state === "裁撤中" || state === "执行中"
+              ? "doing"
+              : "";
     return `<span class="tag ${cls}">${state}</span>`;
+  }
+
+  function toast(message, ok) {
+    const el = document.createElement("div");
+    el.className = `toast ${ok ? "toast-ok" : "toast-bad"}`;
+    el.textContent = message;
+    document.body.appendChild(el);
+    setTimeout(() => el.remove(), 5000);
+  }
+
+  function mismatchText(mismatches) {
+    if (!mismatches || !mismatches.length) return "—";
+    return mismatches
+      .map(
+        (m) =>
+          `裁决${m.judgment_id}要求${m.decided_action}，分区${m.partition_id}实为「${m.storage_state}」`
+      )
+      .join("；");
   }
 
   async function renderPolicies() {
@@ -127,9 +147,9 @@
     main.innerHTML = `
       <section class="panel">
         <h2>裁决清单</h2>
-        <p class="sub">待执行可点「执行」。执行结果写回分区存储态与执行流水。</p>
+        <p class="sub">待执行可点「执行」。执行结果写回分区存储态与执行流水；「实物状态」取自分区表，与对账同源。</p>
         <table>
-          <thead><tr><th>编号</th><th>主题域</th><th>业务日</th><th>策略</th><th>动作</th><th>状态</th><th>操作</th></tr></thead>
+          <thead><tr><th>编号</th><th>主题域</th><th>业务日</th><th>策略</th><th>动作</th><th>裁决状态</th><th>实物状态</th><th>操作</th></tr></thead>
           <tbody>
             ${
               data.items.length
@@ -142,6 +162,7 @@
               <td>v${j.policy_version} / ${j.keep_days}天</td>
               <td>${j.decided_action}</td>
               <td>${tag(j.status)}</td>
+              <td>${tag(j.storage_state)}</td>
               <td>${
                 j.status === "待执行" || j.status === "已失败"
                   ? `<button type="button" data-exec="${j.id}">执行</button>`
@@ -150,14 +171,18 @@
             </tr>`
                     )
                     .join("")
-                : `<tr><td colspan="7" class="empty">尚无裁决，请先跑到期扫描</td></tr>`
+                : `<tr><td colspan="8" class="empty">尚无裁决，请先跑到期扫描</td></tr>`
             }
           </tbody>
         </table>
       </section>`;
     main.querySelectorAll("[data-exec]").forEach((btn) => {
       btn.onclick = async () => {
-        await api(`/api/judgments/${btn.dataset.exec}/execute`, { method: "POST" });
+        try {
+          await api(`/api/judgments/${btn.dataset.exec}/execute`, { method: "POST" });
+        } catch (err) {
+          toast(`执行失败：${err.message}`, false);
+        }
         await renderJudgments();
       };
     });
@@ -174,8 +199,9 @@
       </div>
       <section class="panel">
         <h2>对账报告</h2>
+        <p class="sub">计数为提交瞬间服务端一次性重算并落库的物化摘要，与实物分区同源；存在裁撤中/执行中等混数时服务端直接拦截。</p>
         <table>
-          <thead><tr><th>编号</th><th>基准日</th><th>在线</th><th>归档</th><th>销毁</th><th>待裁决</th><th>错位</th><th>摘要</th></tr></thead>
+          <thead><tr><th>编号</th><th>基准日</th><th>在线</th><th>归档</th><th>销毁</th><th>待裁决</th><th>错位</th><th>摘要</th><th>错位来源</th></tr></thead>
           <tbody>
             ${
               reports.items.length
@@ -190,20 +216,26 @@
               <td>${r.pending_judgment_count}</td>
               <td>${r.mismatch_count}</td>
               <td>${r.summary}</td>
+              <td class="mismatch-src">${mismatchText(r.mismatches)}</td>
             </tr>`
                     )
                     .join("")
-                : `<tr><td colspan="8" class="empty">尚无对账报告</td></tr>`
+                : `<tr><td colspan="9" class="empty">尚无对账报告</td></tr>`
             }
           </tbody>
         </table>
       </section>`;
     document.getElementById("btn-rec").onclick = async () => {
       const as_of_date = document.getElementById("as-of-r").value.trim();
-      await api("/api/reconcile-reports", {
-        method: "POST",
-        body: JSON.stringify({ as_of_date }),
-      });
+      try {
+        await api("/api/reconcile-reports", {
+          method: "POST",
+          body: JSON.stringify({ as_of_date }),
+        });
+        toast("对账报告已生成并落库", true);
+      } catch (err) {
+        toast(`对账被拦截：${err.message}`, false);
+      }
       await renderReconcile();
     };
   }

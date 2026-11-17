@@ -175,6 +175,10 @@ async def api_reconcile(request: Request):
     as_of = str(body.get("as_of_date", "")).strip()
     if not as_of:
         raise HTTPException(status_code=400, detail="缺少 as_of_date")
-    with get_db() as conn:
-        report = run_reconcile(conn, as_of)
+    try:
+        with get_db() as conn:
+            report = run_reconcile(conn, as_of)
+    except ValueError as exc:
+        # 混数/同源拦截：回中文提示，不产生报告
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     return {"ok": True, "report": report}

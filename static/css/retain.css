@@ -176,7 +176,24 @@ th { color: var(--muted); font-weight: 550; }
 .tag.ok { color: var(--ok); border-color: #3d5a48; }
 .tag.warn { color: var(--warn); border-color: #5a4d2e; }
 .tag.bad { color: var(--bad); border-color: #5a3535; }
+.tag.doing { color: var(--accent); border-color: #5a4630; }
 .empty { color: var(--muted); padding: 12px 0; }
+.mismatch-src { color: var(--warn); font-size: 12px; max-width: 320px; }
+.toast {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  max-width: 480px;
+  padding: 12px 16px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--ink);
+  font-size: 13px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  z-index: 50;
+}
+.toast-ok { border-color: #3d5a48; }
+.toast-bad { border-color: #5a3535; color: var(--bad); }
 @media (max-width: 860px) {
   .layout { grid-template-columns: 1fr; }
   .nav { border-right: 0; border-bottom: 1px solid var(--line); display: flex; gap: 6px; overflow-x: auto; }
